@@ -9,7 +9,7 @@ def get_ip_address():
     s.connect(("8.8.8.8", 80))
     return s.getsockname()[0]
 
-IP = get_ip_address()
+IP = "172.17.0.2"
 PORT = 33000
 my_username = input("Input Username: ")
 
