@@ -1,66 +1,82 @@
-from socket import AF_INET, socket, SOCK_STREAM
-from threading import Thread
-import tkinter
+import socket
+import select
+import errno
 
+HEADER_LENGTH = 10
 
-def receive():
-    while True:
-        try:
-            msg = client_socket.recv(BUFSIZ).decode("utf8")
-            msg_list.insert(tkinter.END, msg)
-        except OSError:  # Possibly client has left the chat.
-            break
+IP = "127.0.0.1"
+PORT = 1234
+my_username = input("Input Username: ")
 
+# Create a socket
+# socket.AF_INET - address family, IPv4, some otehr possible are AF_INET6, AF_BLUETOOTH, AF_UNIX
+# socket.SOCK_STREAM - TCP, conection-based, socket.SOCK_DGRAM - UDP, connectionless, datagrams, socket.SOCK_RAW - raw IP packets
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-def send(event=None):  # event is passed by binders.
-    msg = my_msg.get()
-    my_msg.set("")  # Clears input field.
-    client_socket.send(bytes(msg, "utf8"))
-    if msg == "{quit}":
-        client_socket.close()
-        top.quit()
+# Connect to a given ip and port
+client_socket.connect((IP, PORT))
 
+# Set connection to non-blocking state, so .recv() call won;t block, just return some exception we'll handle
+client_socket.setblocking(False)
 
-def on_closing(event=None):
-    my_msg.set("{quit}")
-    send()
+# Prepare username and header and send them
+# We need to encode username to bytes, then count number of bytes and prepare header of fixed size, that we encode to bytes as well
+username = my_username.encode('utf-8')
+username_header = f"{len(username):<{HEADER_LENGTH}}".encode('utf-8')
+client_socket.send(username_header + username)
 
-top = tkinter.Tk()
-top.title("Chatter")
+while True:
 
-messages_frame = tkinter.Frame(top)
-my_msg = tkinter.StringVar()  # For the messages to be sent.
-my_msg.set("Nhap ten cua ban!.")
-scrollbar = tkinter.Scrollbar(messages_frame)  # To navigate through past messages.
-# Following will contain the messages.
-msg_list = tkinter.Listbox(messages_frame, height=15, width=50, yscrollcommand=scrollbar.set)
-scrollbar.pack(side=tkinter.RIGHT, fill=tkinter.Y)
-msg_list.pack(side=tkinter.LEFT, fill=tkinter.BOTH)
-msg_list.pack()
-messages_frame.pack()
+    # Wait for user to input a message
+    message = input(f'{my_username} > ')
 
-entry_field = tkinter.Entry(top, textvariable=my_msg)
-entry_field.bind("<Return>", send)
-entry_field.pack()
-send_button = tkinter.Button(top, text="Gui", command=send)
-send_button.pack()
+    # If message is not empty - send it
+    if message:
 
-top.protocol("WM_DELETE_WINDOW", on_closing)
+        # Encode message to bytes, prepare header and convert to bytes, like for username above, then send
+        message = message.encode('utf-8')
+        message_header = f"{len(message):<{HEADER_LENGTH}}".encode('utf-8')
+        client_socket.send(message_header + message)
 
-#Ket noi toi server
-HOST = '127.0.0.1'
-PORT = 33000
-if not PORT:
-    PORT = 33000
-else:
-    PORT = int(PORT)
+    try:
+        # Now we want to loop over received messages (there might be more than one) and print them
+        while True:
 
-BUFSIZ = 1024
-ADDR = (HOST, PORT)
+            # Receive our "header" containing username length, it's size is defined and constant
+            username_header = client_socket.recv(HEADER_LENGTH)
 
-client_socket = socket(AF_INET, SOCK_STREAM)
-client_socket.connect(ADDR)
+            # If we received no data, server gracefully closed a connection, for example using socket.close() or socket.shutdown(socket.SHUT_RDWR)
+            if not len(username_header):
+                print('Connection closed by the server')
+                sys.exit()
 
-receive_thread = Thread(target=receive)
-receive_thread.start()
-tkinter.mainloop()  # Starts GUI execution.
+            # Convert header to int value
+            username_length = int(username_header.decode('utf-8').strip())
+
+            # Receive and decode username
+            username = client_socket.recv(username_length).decode('utf-8')
+
+            # Now do the same for message (as we received username, we received whole message, there's no need to check if it has any length)
+            message_header = client_socket.recv(HEADER_LENGTH)
+            message_length = int(message_header.decode('utf-8').strip())
+            message = client_socket.recv(message_length).decode('utf-8')
+
+            # Print message
+            print(f'{username} > {message}')
+
+    except IOError as e:
+        # This is normal on non blocking connections - when there are no incoming data error is going to be raised
+        # Some operating systems will indicate that using AGAIN, and some using WOULDBLOCK error code
+        # We are going to check for both - if one of them - that's expected, means no incoming data, continue as normal
+        # If we got different error code - something happened
+        if e.errno != errno.EAGAIN and e.errno != errno.EWOULDBLOCK:
+            print('Reading error: {}'.format(str(e)))
+            sys.exit()
+
+        # We just did not receive anything
+        continue
+
+    except Exception as e:
+        # Any other exception - something happened, exit
+        print('Reading error: '.format(str(e)))
+        sys.exit()
