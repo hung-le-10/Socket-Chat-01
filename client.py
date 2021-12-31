@@ -4,7 +4,12 @@ import errno
 
 HEADER_LENGTH = 10
 
-IP = '172.17.0.2'
+def get_ip_address():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    return s.getsockname()[0]
+
+IP = get_ip_address()
 PORT = 33000
 my_username = input("Input Username: ")
 
