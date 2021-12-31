@@ -3,8 +3,8 @@ import select
 
 HEADER_LENGTH = 10
 
-IP = "127.0.0.1"
-PORT = 8080
+IP = "172.17.0.3"
+PORT = 65000
 
 # Create a socket
 # socket.AF_INET - address family, IPv4, some otehr possible are AF_INET6, AF_BLUETOOTH, AF_UNIX
